@@ -1,5 +1,5 @@
 from beanie import Document, PydanticObjectId
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 
@@ -22,14 +22,16 @@ class Colors(BaseModel):
 class WardrobeItem(Document):
     userId: str 
     title: str = ""
-    imageUrl: str
+    imageUrl: str = ""
+    image: Optional[Any] = None
     thumbnail: Optional[str] = None
     
     # Classification
     category: Optional[str] = None
     subcategory: Optional[str] = None
     gender: Optional[str] = None
-    colors: Colors = Field(default_factory=Colors)
+    colors: Optional[Union[Colors, Dict[str, Any], Any]] = Field(default_factory=Colors)
+    color: Optional[Any] = None
     brand: Optional[str] = None
     
     # AI Extracted Attributes
@@ -53,8 +55,10 @@ class WardrobeItem(Document):
     style: Optional[str] = None
     fashionStyle: Optional[str] = None
     dressCode: Optional[str] = None
-    season: List[str] = Field(default_factory=list)
-    occasion: List[str] = Field(default_factory=list)
+    season: Optional[List[str]] = Field(default_factory=list)
+    seasonTags: Optional[List[str]] = None
+    occasion: Optional[List[str]] = Field(default_factory=list)
+    occasionTags: Optional[List[str]] = None
     ageGroup: Optional[str] = None
     
     # AI Scoring
@@ -91,6 +95,41 @@ class WardrobeItem(Document):
 
     class Settings:
         name = "wardrobe_items"
+
+    @model_validator(mode='before')
+    @classmethod
+    def handle_legacy_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Fix imageUrl
+            if not data.get('imageUrl'):
+                if 'image' in data:
+                    img = data['image']
+                    if isinstance(img, str):
+                        data['imageUrl'] = img
+                    elif isinstance(img, dict) and 'url' in img:
+                        data['imageUrl'] = img['url']
+                    else:
+                        data['imageUrl'] = ""
+                else:
+                    data['imageUrl'] = ""
+                    
+            # Fix colors (if it's a list or None)
+            if 'colors' in data and not isinstance(data['colors'], dict):
+                data['colors'] = {'primary': None, 'secondary': None}
+                
+            if 'color' in data and data.get('color'):
+                if isinstance(data['color'], dict) and 'name' in data['color']:
+                    data['colors'] = {'primary': data['color']['name'], 'secondary': None}
+
+            # Fix season (if it's None)
+            if data.get('season') is None:
+                data['season'] = data.get('seasonTags') or []
+                
+            # Fix occasion (if it's None)
+            if data.get('occasion') is None:
+                data['occasion'] = data.get('occasionTags') or []
+                
+        return data
 
 class WardrobeItemCreate(BaseModel):
     title: str = ""
