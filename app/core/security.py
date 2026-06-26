@@ -3,8 +3,13 @@ import firebase_admin
 from firebase_admin import credentials, auth
 from app.config import settings
 
+import os
+
 # Initialize Firebase
 try:
+    if os.path.exists("serviceAccountKey.json"):
+        cred = credentials.Certificate("serviceAccountKey.json")
+    else:
         cred = credentials.Certificate({
             "type": "service_account",
             "project_id": settings.FIREBASE_PROJECT_ID,
@@ -12,8 +17,8 @@ try:
             "client_email": settings.FIREBASE_CLIENT_EMAIL,
             "token_uri": "https://oauth2.googleapis.com/token",
         })
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app(cred)
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
 except ValueError as e:
     print(f"Warning: Failed to initialize Firebase Admin (likely dummy credentials): {e}")
     # Still allow the app to start so the 'test-token' fallback works
