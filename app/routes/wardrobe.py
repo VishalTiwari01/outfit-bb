@@ -8,6 +8,8 @@ from app.models.metadata import UserCollection, UserOccasion
 from app.models.activity import ActivityLog
 from pydantic import BaseModel
 from datetime import datetime
+import asyncio
+from app.services.ai_wardrobe import process_wardrobe_upload
 
 router = APIRouter()
 
@@ -78,6 +80,26 @@ async def add_item(item_create: WardrobeItemCreate, user: User = Depends(get_db_
     item = WardrobeItem(**item_create.model_dump(), userId=user.firebaseUid)
     await item.insert()
     await log_activity(user.firebaseUid, "UPLOAD", str(item.id))
+    return item
+
+class AIUploadRequest(BaseModel):
+    imageUrl: str
+    title: Optional[str] = ""
+
+@router.post("/ai-upload", response_model=WardrobeItem)
+async def ai_add_item(req: AIUploadRequest, user: User = Depends(get_db_user)):
+    # Run Gemini processing in a background thread to avoid blocking FastAPI
+    loop = asyncio.get_event_loop()
+    ai_metadata = await loop.run_in_executor(None, process_wardrobe_upload, req.imageUrl, req.title)
+    
+    # Convert AI output to WardrobeItemCreate format
+    item_create = WardrobeItemCreate(**ai_metadata)
+    
+    # Save to database
+    item = WardrobeItem(**item_create.model_dump(), userId=user.firebaseUid)
+    await item.insert()
+    
+    await log_activity(user.firebaseUid, "AI_UPLOAD", str(item.id))
     return item
 
 @router.put("/{item_id}", response_model=WardrobeItem)

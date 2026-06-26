@@ -15,31 +15,57 @@ class ImageMetadata(BaseModel):
     height: Optional[int] = None
     size: Optional[int] = None
 
-class AIMetadata(BaseModel):
-    category: Optional[str] = None
-    fabric: Optional[str] = None
-    pattern: Optional[str] = None
-    style: Optional[str] = None
+class Colors(BaseModel):
+    primary: Optional[str] = None
+    secondary: Optional[str] = None
 
 class WardrobeItem(Document):
     userId: str 
     title: str = ""
-    image: Union[str, ImageMetadata, dict]
+    imageUrl: str
+    thumbnail: Optional[str] = None
     
     # Classification
     category: Optional[str] = None
-    subCategory: Optional[str] = None
+    subcategory: Optional[str] = None
     gender: Optional[str] = None
-    colors: List[ColorDetail] = Field(default_factory=list)
+    colors: Colors = Field(default_factory=Colors)
     brand: Optional[str] = None
     
-    # Details
-    fabric: Optional[str] = None
+    # AI Extracted Attributes
     pattern: Optional[str] = None
+    material: Optional[str] = None
+    fabric: Optional[str] = None
+    texture: Optional[str] = None
+    transparency: Optional[str] = None
     fit: Optional[str] = None
-    sleeve: Optional[str] = None
+    length: Optional[str] = None
     neck: Optional[str] = None
-    season: Optional[str] = None
+    collarType: Optional[str] = None
+    sleeve: Optional[str] = None
+    pocketCount: Optional[int] = 0
+    buttonType: Optional[str] = None
+    closureType: Optional[str] = None
+    printType: Optional[str] = None
+    layerType: Optional[str] = None
+    
+    # Context & Style
+    style: Optional[str] = None
+    fashionStyle: Optional[str] = None
+    dressCode: Optional[str] = None
+    season: List[str] = Field(default_factory=list)
+    occasion: List[str] = Field(default_factory=list)
+    ageGroup: Optional[str] = None
+    
+    # AI Scoring
+    weatherScore: Optional[float] = None
+    luxuryScore: Optional[float] = None
+    casualScore: Optional[float] = None
+    formalityScore: Optional[float] = None
+    
+    # Vector Search
+    embedding: List[float] = Field(default_factory=list)
+    confidence: Optional[float] = None
     
     # Status & Tracking
     status: str = "active" # active, archived, donated, sold, damaged
@@ -59,7 +85,6 @@ class WardrobeItem(Document):
     notes: str = ""
     
     # System
-    aiMetadata: Optional[AIMetadata] = None
     deletedAt: Optional[datetime] = None
     createdAt: datetime = Field(default_factory=datetime.utcnow)
     updatedAt: datetime = Field(default_factory=datetime.utcnow)
@@ -69,24 +94,43 @@ class WardrobeItem(Document):
 
 class WardrobeItemCreate(BaseModel):
     title: str = ""
-    image: Union[str, ImageMetadata, dict]
+    imageUrl: str
+    thumbnail: Optional[str] = None
+    
     category: Optional[str] = None
-    subCategory: Optional[str] = None
+    subcategory: Optional[str] = None
     gender: Optional[str] = None
-    colors: List[ColorDetail] = Field(default_factory=list)
+    colors: Colors = Field(default_factory=Colors)
     brand: Optional[str] = None
-    fabric: Optional[str] = None
+    logoPresent: bool = False
+    
     pattern: Optional[str] = None
+    material: Optional[str] = None
+    fabric: Optional[str] = None
+    texture: Optional[str] = None
+    transparency: Optional[str] = None
     fit: Optional[str] = None
-    sleeve: Optional[str] = None
+    length: Optional[str] = None
     neck: Optional[str] = None
-    season: Optional[str] = None
-    status: str = "active"
-    laundryStatus: str = "clean"
-    occasionIds: List[str] = Field(default_factory=list)
-    collectionIds: List[str] = Field(default_factory=list)
-    purchaseDate: Optional[datetime] = None
-    price: Optional[float] = None
-    favorite: bool = False
-    notes: str = ""
-    aiMetadata: Optional[AIMetadata] = None
+    collarType: Optional[str] = None
+    sleeve: Optional[str] = None
+    pocketCount: Optional[int] = 0
+    buttonType: Optional[str] = None
+    closureType: Optional[str] = None
+    printType: Optional[str] = None
+    layerType: Optional[str] = None
+    
+    style: Optional[str] = None
+    fashionStyle: Optional[str] = None
+    dressCode: Optional[str] = None
+    season: List[str] = Field(default_factory=list)
+    occasion: List[str] = Field(default_factory=list)
+    ageGroup: Optional[str] = None
+    
+    weatherScore: Optional[float] = None
+    luxuryScore: Optional[float] = None
+    casualScore: Optional[float] = None
+    formalityScore: Optional[float] = None
+    
+    embedding: List[float] = Field(default_factory=list)
+    confidence: Optional[float] = None

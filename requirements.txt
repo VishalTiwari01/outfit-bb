@@ -12,3 +12,4 @@ pydantic-settings
 cloudinary
 gradio_client
 rembg[cpu]
+google-genai
