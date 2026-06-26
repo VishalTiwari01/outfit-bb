@@ -209,7 +209,13 @@ Style: {style}
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        if "ZeroGPU quota" in error_msg:
+            raise HTTPException(
+                status_code=429, 
+                detail="Our free AI Server is currently at full capacity (ZeroGPU quota exceeded). Please wait about 5 minutes and try again."
+            )
+        raise HTTPException(status_code=500, detail=error_msg)
     finally:
         # Cleanup temporary files
         shutil.rmtree(temp_dir)
