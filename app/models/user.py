@@ -5,7 +5,8 @@ class User(Document):
     firebaseUid: str
     name: str
     email: str
-    mobile: Optional[str] = None
+    phone: Optional[str] = None
+    avatarUrl: Optional[str] = None
     isPremium: bool = False
     credits: int = 0
 
