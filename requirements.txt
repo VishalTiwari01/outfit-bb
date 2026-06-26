@@ -3,6 +3,9 @@ uvicorn
 motor
 beanie
 firebase-admin
+pyjwt
+httpx
+python-multipart
 python-dotenv
 pydantic
 pydantic-settings
