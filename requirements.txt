@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+motor
+beanie
+firebase-admin
+python-dotenv
+pydantic
+pydantic-settings
+cloudinary
+gradio_client
+rembg[cpu]
