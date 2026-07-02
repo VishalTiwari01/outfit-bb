@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
-from typing import List
+from typing import List, Optional
 import shutil
 import tempfile
 import os
@@ -26,7 +26,8 @@ cloudinary.config(
 @router.post("/generate")
 async def generate_tryon(
     user_image: UploadFile = File(...),
-    dress_images: List[UploadFile] = File(...),
+    top_image: UploadFile = File(...),
+    bottom_image: Optional[UploadFile] = File(None),
     occasion: str = Form(...),
     category: str = Form("Unknown"),
     gender: str = Form("Unknown"),
@@ -43,129 +44,90 @@ async def generate_tryon(
     try:
         # 1. Temporary Storage (Convert to RGB to prevent RGBA as JPEG errors in Gradio)
         user_img_path = os.path.join(temp_dir, "user_image.jpg")
-        dress_img_path = os.path.join(temp_dir, "dress_image.jpg")
+        top_img_path = os.path.join(temp_dir, "top_image.jpg")
         
         user_pil = Image.open(user_image.file)
         if user_pil.mode in ("RGBA", "P"):
             user_pil = user_pil.convert("RGB")
         user_pil.save(user_img_path, "JPEG")
             
-        # Process and stitch multiple dress images if provided
-        dress_pils = []
-        for d_img in dress_images:
-            pil_img = Image.open(d_img.file)
-            if pil_img.mode in ("RGBA", "P"):
-                pil_img = pil_img.convert("RGB")
-            dress_pils.append(pil_img)
-            
-        if len(dress_pils) > 1:
-            # Stitch them vertically
-            total_height = sum(img.height for img in dress_pils)
-            max_width = max(img.width for img in dress_pils)
-            merged_img = Image.new("RGB", (max_width, total_height), (255, 255, 255))
-            y_offset = 0
-            for img in dress_pils:
-                merged_img.paste(img, (0, y_offset))
-                y_offset += img.height
-            merged_img.save(dress_img_path, "JPEG")
-        elif len(dress_pils) == 1:
-            dress_pils[0].save(dress_img_path, "JPEG")
-        else:
-            raise HTTPException(status_code=400, detail="At least one dress image must be provided.")
+        top_pil = Image.open(top_image.file)
+        if top_pil.mode in ("RGBA", "P"):
+            top_pil = top_pil.convert("RGB")
+        top_pil.save(top_img_path, "JPEG")
+        
+        bottom_img_path = None
+        if bottom_image:
+            bottom_img_path = os.path.join(temp_dir, "bottom_image.jpg")
+            bottom_pil = Image.open(bottom_image.file)
+            if bottom_pil.mode in ("RGBA", "P"):
+                bottom_pil = bottom_pil.convert("RGB")
+            bottom_pil.save(bottom_img_path, "JPEG")
             
         # 2. Virtual Try-On ML Call via HuggingFace Space
-        # NOTE: Using yisol/IDM-VTON because all CatVTON spaces are currently broken 
-        # internally on HuggingFace ("cannot write mode RGBA as JPEG" server error).
         
         # Force reload .env so we don't have to restart the backend server manually
         load_dotenv(override=True)
         hf_token = os.getenv("HF_TOKEN") or settings.HF_TOKEN
         
-        client = Client("yisol/IDM-VTON", token=hf_token) if hf_token else Client("yisol/IDM-VTON")
+        client = Client("Kwai-Kolors/Kolors-Virtual-Try-On", token=hf_token) if hf_token else Client("Kwai-Kolors/Kolors-Virtual-Try-On")
         
-        person_dict = {
-            "background": handle_file(user_img_path),
-            "layers": [],
-            "composite": None
-        }
+        # Bypass Gradio's restriction on api_name=False
+        client.endpoints[2].api_name = '/predict'
+        client.endpoints[2].is_valid = True
         
-        # Create a highly detailed strict prompt to enforce preservation of the original garment
-        final_garment_des = f"""You are a professional Virtual Try-On AI.
-
-Your task is NOT to generate a new outfit.
-
-Use the uploaded garment image as the ONLY clothing source.
-
-The uploaded garment must be transferred exactly onto the uploaded person's body.
-
-Requirements:
-
-* Preserve the original garment exactly as uploaded.
-* Do not change the garment color.
-* Do not change the garment texture.
-* Do not change the garment pattern.
-* Do not change the garment stitching.
-* Do not change the garment logo or branding.
-* Do not redesign or invent any new clothing details.
-
-The garment should naturally fit the person's body shape, height, shoulder width, waist, arms, and pose.
-
-Maintain realistic:
-
-* Fabric folds
-* Cloth wrinkles
-* Sleeve alignment
-* Collar position
-* Hem position
-* Shadows
-* Lighting
-* Perspective
-* Body proportions
-
-The clothing should appear as if the person is actually wearing it.
-
-Do not float the clothing.
-
-Do not stretch or compress the garment unnaturally.
-
-Do not distort the body.
-
-The garment must correctly wrap around the body according to the person's pose.
-
-Keep hands, fingers, face, hair, skin tone, background, shoes, and pants unchanged unless they are covered by the uploaded garment.
-
-Generate a realistic, high-quality virtual try-on result with seamless garment fitting.
-
-Occasion:
-{occasion}
-
-Garment Category:
-{category}
-
-Garment Details:
-Gender: {gender}
-Color: {color}
-Fabric: {fabric}
-Pattern: {pattern}
-Fit: {fit}
-Sleeves: {sleeve}
-Style: {style}
-"""
-
-        # Run prediction in a thread pool to avoid blocking the async event loop
-        result = await run_in_threadpool(
-            client.predict,
-            dict=person_dict,
-            garm_img=handle_file(dress_img_path),
-            garment_des=final_garment_des,
-            is_checked=True,
-            is_checked_crop=False,
-            denoise_steps=30,
-            seed=42,
-            api_name="/tryon"
-        )
+        import asyncio
+        max_retries = 5
         
-        generated_img_path = result[0]
+        async def call_predict_with_retry(img1, img2):
+            for attempt in range(max_retries):
+                try:
+                    return await run_in_threadpool(
+                        client.predict,
+                        handle_file(img1),
+                        handle_file(img2),
+                        42, # seed
+                        True, # randomize_seed
+                        fn_index=2
+                    )
+                except Exception as e:
+                    err_msg = str(e)
+                    should_retry = (
+                        "Too many users" in err_msg or 
+                        "queue" in err_msg.lower() or 
+                        "upstream gradio app has raised an exception" in err_msg.lower() or
+                        "404 not found" in err_msg.lower() or
+                        "50" in err_msg # 500, 502, 503, 504 server errors
+                    )
+                    
+                    if should_retry and attempt < max_retries - 1:
+                        print(f"HF Server overloaded/crashed. Retrying {attempt + 1}/{max_retries} in 5 seconds...")
+                        await asyncio.sleep(5)
+                        continue
+                    raise e
+
+        try:
+            # Pass 1: Top Garment Try-On
+            result_top = await call_predict_with_retry(user_img_path, top_img_path)
+            
+            if isinstance(result_top, (list, tuple)):
+                generated_img_path = result_top[0]
+            else:
+                generated_img_path = result_top
+                
+            # Pass 2: Bottom Garment Try-On (if provided)
+            if bottom_img_path:
+                result_bottom = await call_predict_with_retry(generated_img_path, bottom_img_path)
+                
+                if isinstance(result_bottom, (list, tuple)):
+                    generated_img_path = result_bottom[0]
+                else:
+                    generated_img_path = result_bottom
+        except Exception as e:
+            err_msg = str(e)
+            if "Too many users" in err_msg or "queue" in err_msg.lower():
+                raise HTTPException(status_code=503, detail="The AI server is currently heavily overloaded. Please try again later, or duplicate the HF Space for private access.")
+            raise HTTPException(status_code=500, detail=f"AI Model Error: {err_msg}")
         # 3. Cloudinary Uploads with Fallback
         try:
             # Upload user image
@@ -173,7 +135,7 @@ Style: {style}
             user_img_url = user_upload.get("secure_url")
             
             # Upload dress image
-            dress_upload = cloudinary.uploader.upload(dress_img_path)
+            dress_upload = cloudinary.uploader.upload(top_img_path)
             dress_img_url = dress_upload.get("secure_url")
             
             # Upload generated image
@@ -184,7 +146,7 @@ Style: {style}
             import base64
             with open(user_img_path, "rb") as f:
                 user_img_url = f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode('utf-8')}"
-            with open(dress_img_path, "rb") as f:
+            with open(top_img_path, "rb") as f:
                 dress_img_url = f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode('utf-8')}"
             with open(generated_img_path, "rb") as f:
                 result_img_url = f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode('utf-8')}"
